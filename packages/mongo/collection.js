@@ -56,8 +56,11 @@ Mongo.Collection = function (name, options) {
     idGeneration: 'STRING',
     transform: null,
     _driver: undefined,
+    _namespace: null,
     _preventAutopublish: false
   }, options);
+
+  self._namespace = options._namespace;
 
   switch (options.idGeneration) {
   case 'MONGO':
@@ -833,7 +836,15 @@ Mongo.Collection.prototype._defineMutationMethods = function() {
 
   // XXX Think about method namespacing. Maybe methods should be
   // "Meteor:Mongo:insert/NAME"?
-  self._prefix = '/' + self._name + '/';
+
+  console.log("This MongoDB has been patched. We now have a namespace: [%s]", self._namespace);
+  console.log("This MongoDB has been patched. We now have a namespace: ]", self);
+
+  if(self._namespace != null){
+    self._prefix = '/' + self._namespace + "__" + self._name + '/';
+  }else{
+    self._prefix = '/' + self._name + '/';
+  }
 
   // mutation methods
   if (self._connection) {
