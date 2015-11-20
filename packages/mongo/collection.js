@@ -93,10 +93,16 @@ Mongo.Collection = function (name, options) {
 
 
   function getTenant(){
-      if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null ){
+      if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null
+        || typeof Meteor.server.__connection_id === "undefined"
+        ){
         return null;
       }
-      var base_url = self._connection.stream_server._initial_request_url;
+      var connection_id = Meteor.server.__connection_id;
+      // Meteor.server.__connection_id = null;
+      // console.log(self._connection.sessions[connection_id].socket.url);
+      var base_url = self._connection.sessions[connection_id].socket.url
+      // var base_url = self._connection.stream_server._initial_request_url;
       if(base_url == null){
         return null;
       }

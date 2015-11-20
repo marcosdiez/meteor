@@ -1695,5 +1695,8 @@ var maybeAuditArgumentChecks = function (f, context, args, description) {
     return Match._failIfArgumentsAreNotAllChecked(
       f, context, args, description);
   }
+  var connection_id = context.connection.id;
+  console.log("Sending connection ID to the server: " + connection_id);
+  Meteor.server.__connection_id = connection_id;
   return f.apply(context, args);
 };
