@@ -91,6 +91,80 @@ Mongo.Collection = function (name, options) {
   else
     self._connection = Meteor.server;
 
+
+  function getTenant(){
+      if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null ){
+        return null;
+      }
+      var base_url = self._connection.stream_server._initial_request_url;
+      if(base_url == null){
+        return null;
+      }
+
+      var toSearch = "referer=";
+      var pos = base_url.indexOf(toSearch);
+      if(pos < 0){
+        return null;
+      }
+
+      var output = base_url.substring(pos + toSearch.length).split("/").join("");
+
+      return output;
+  }
+
+  function addTenantToConnectionString(connectionString, tenant){
+      if(tenant == null || tenant == ""){
+        return connectionString;
+      }
+      var pos = connectionString.lastIndexOf("/");
+      var newConnectionString = connectionString.substring(0, pos+1) + tenant + "_" + connectionString.substring(pos+1);
+
+      return newConnectionString;
+  }
+
+
+  function defaultRemoteCollectionDriverWithTenantSupport(tenant){
+      var connectionOptions = {};
+      var mongoUrl = addTenantToConnectionString(process.env.MONGO_URL, tenant);
+      if (process.env.MONGO_OPLOG_URL) {
+        connectionOptions.oplogUrl = addTenantToConnectionString(process.env.MONGO_OPLOG_URL, tenant);
+      }
+
+      if (! mongoUrl){
+        throw new Error("MONGO_URL must be set in environment");
+      }
+      console.log("mongoUrl %s name %s", mongoUrl, self._name);
+      return new MongoInternals.RemoteCollectionDriver(mongoUrl, connectionOptions);
+  }
+
+  function getDatabaseDriver(tenant) {
+      if(typeof Meteor.server._multi_tenant_db_pool === "undefined"){
+        Meteor.server._multi_tenant_db_pool = {};
+      }
+      if(!Meteor.server._multi_tenant_db_pool.hasOwnProperty(tenant)){
+        Meteor.server._multi_tenant_db_pool[tenant] = defaultRemoteCollectionDriverWithTenantSupport(tenant);
+      }
+      return Meteor.server._multi_tenant_db_pool[tenant];
+  }
+
+  function getCollection(tenant){
+    console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
+    if(tenant==null){
+      return self._collection2;
+    }
+    var connection_name = tenant + "__" + self._name
+    if(typeof Meteor.server._multi_tenant_collections_pool === "undefined"){
+      Meteor.server._multi_tenant_collections_pool = {};
+    }
+    if(!Meteor.server._multi_tenant_collections_pool.hasOwnProperty(connection_name)){
+      console.log("registering new tenant: (tenant=%s)", connection_name);
+      var driver = getDatabaseDriver(tenant);
+      Meteor.server._multi_tenant_collections_pool[connection_name] = driver.open(name, self._connection);
+    }
+    var result = Meteor.server._multi_tenant_collections_pool[connection_name];
+    return result;
+  }
+
   if (!options._driver) {
     // XXX This check assumes that webapp is loaded so that Meteor.server !==
     // null. We should fully support the case of "want to use a Mongo-backed
@@ -108,79 +182,6 @@ Mongo.Collection = function (name, options) {
   self._collection2 = options._driver.open(name, self._connection);
 
   self._collection = function(){
-    function getTenant(){
-        if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null ){
-          return null;
-        }
-        var base_url = self._connection.stream_server._initial_request_url;
-        if(base_url == null){
-          return null;
-        }
-
-        var toSearch = "referer=";
-        var pos = base_url.indexOf(toSearch);
-        if(pos < 0){
-          return null;
-        }
-
-        var output = base_url.substring(pos + toSearch.length).split("/").join("");
-
-        return output;
-    }
-
-    function addTenantToConnectionString(connectionString, tenant){
-        if(tenant == null || tenant == ""){
-          return connectionString;
-        }
-        var pos = connectionString.lastIndexOf("/");
-        var newConnectionString = connectionString.substring(0, pos+1) + tenant + "_" + connectionString.substring(pos+1);
-
-        return newConnectionString;
-    }
-
-
-    function defaultRemoteCollectionDriverWithTenantSupport(tenant){
-        var connectionOptions = {};
-        var mongoUrl = addTenantToConnectionString(process.env.MONGO_URL, tenant);
-        if (process.env.MONGO_OPLOG_URL) {
-          connectionOptions.oplogUrl = addTenantToConnectionString(process.env.MONGO_OPLOG_URL, tenant);
-        }
-
-        if (! mongoUrl){
-          throw new Error("MONGO_URL must be set in environment");
-        }
-        console.log("mongoUrl %s name %s", mongoUrl, self._name);
-        return new MongoInternals.RemoteCollectionDriver(mongoUrl, connectionOptions);
-    }
-
-    function getDatabaseDriver(tenant) {
-        if(typeof Meteor.server._multi_tenant_db_pool === "undefined"){
-          Meteor.server._multi_tenant_db_pool = {};
-        }
-        if(!Meteor.server._multi_tenant_db_pool.hasOwnProperty(tenant)){
-          Meteor.server._multi_tenant_db_pool[tenant] = defaultRemoteCollectionDriverWithTenantSupport(tenant);
-        }
-        return Meteor.server._multi_tenant_db_pool[tenant];
-    }
-
-    function getCollection(tenant){
-      console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
-      if(tenant==null){
-        return self._collection2;
-      }
-      var connection_name = tenant + "__" + self._name
-      if(typeof Meteor.server._multi_tenant_collections_pool === "undefined"){
-        Meteor.server._multi_tenant_collections_pool = {};
-      }
-      if(!Meteor.server._multi_tenant_collections_pool.hasOwnProperty(connection_name)){
-        console.log("registering new tenant: (tenant=%s)", connection_name);
-        var driver = getDatabaseDriver(tenant);
-        Meteor.server._multi_tenant_collections_pool[connection_name] = driver.open(name, self._connection);
-      }
-      var result = Meteor.server._multi_tenant_collections_pool[connection_name];
-      return result;
-    }
-
     if(!Meteor.isServer){
       return self._collection2;
     }
@@ -190,7 +191,15 @@ Mongo.Collection = function (name, options) {
   }
 
   self._name = name;
-  self._driver = options._driver;
+  self._driver2 = options._driver;
+
+  self._driver = function(){
+    if(!Meteor.isServer){
+      return self._driver2;
+    }
+    var tenant = getTenant();
+    return getDatabaseDriver(tenant);
+  }
 
   if (self._connection && self._connection.registerStore) {
     // OK, we're going to be a slave, replicating some remote
@@ -755,10 +764,10 @@ Mongo.Collection.prototype.rawCollection = function () {
 Mongo.Collection.prototype.rawDatabase = function () {
   console.log("this is a problem");
   var self = this;
-  if (! (self._driver.mongo && self._driver.mongo.db)) {
+  if (! (self._driver().mongo && self._driver.mongo.db)) {
     throw new Error("Can only call rawDatabase on server collections");
   }
-  return self._driver.mongo.db;
+  return self._driver().mongo.db;
 };
 
 
