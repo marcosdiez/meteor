@@ -147,6 +147,11 @@ _.extend(StreamServer.prototype, {
         // Store arguments for use within the closure below
         var args = arguments;
 
+        if( event == "upgrade" ){
+         console.log("New DDP upgrade request from %s %s", request.url, event);
+         self._initial_request_url=request.url;
+        }
+
         // Rewrite /websocket and /websocket/ urls to /sockjs/websocket while
         // preserving query string.
         var parsedUrl = url.parse(request.url);

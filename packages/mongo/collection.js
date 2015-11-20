@@ -56,11 +56,8 @@ Mongo.Collection = function (name, options) {
     idGeneration: 'STRING',
     transform: null,
     _driver: undefined,
-    _namespace: null,
     _preventAutopublish: false
   }, options);
-
-  self._namespace = options._namespace;
 
   switch (options.idGeneration) {
   case 'MONGO':
@@ -108,7 +105,90 @@ Mongo.Collection = function (name, options) {
     }
   }
 
-  self._collection = options._driver.open(name, self._connection);
+  self._collection2 = options._driver.open(name, self._connection);
+
+  self._collection = function(){
+    function getTenant(){
+        if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null ){
+          return null;
+        }
+        var base_url = self._connection.stream_server._initial_request_url;
+        if(base_url == null){
+          return null;
+        }
+
+        var toSearch = "referer=";
+        var pos = base_url.indexOf(toSearch);
+        if(pos < 0){
+          return null;
+        }
+
+        var output = base_url.substring(pos + toSearch.length).split("/").join("");
+
+        return output;
+    }
+
+    function addTenantToConnectionString(connectionString, tenant){
+        if(tenant == null || tenant == ""){
+          return connectionString;
+        }
+        var pos = connectionString.lastIndexOf("/");
+        var newConnectionString = connectionString.substring(0, pos+1) + tenant + "_" + connectionString.substring(pos+1);
+
+        return newConnectionString;
+    }
+
+
+    function defaultRemoteCollectionDriverWithTenantSupport(tenant){
+        var connectionOptions = {};
+        var mongoUrl = addTenantToConnectionString(process.env.MONGO_URL, tenant);
+        if (process.env.MONGO_OPLOG_URL) {
+          connectionOptions.oplogUrl = addTenantToConnectionString(process.env.MONGO_OPLOG_URL, tenant);
+        }
+
+        if (! mongoUrl){
+          throw new Error("MONGO_URL must be set in environment");
+        }
+        console.log("mongoUrl %s name %s", mongoUrl, self._name);
+        return new MongoInternals.RemoteCollectionDriver(mongoUrl, connectionOptions);
+    }
+
+    function getDatabaseDriver(tenant) {
+        if(typeof Meteor.server._multi_tenant_db_pool === "undefined"){
+          Meteor.server._multi_tenant_db_pool = {};
+        }
+        if(!Meteor.server._multi_tenant_db_pool.hasOwnProperty(tenant)){
+          Meteor.server._multi_tenant_db_pool[tenant] = defaultRemoteCollectionDriverWithTenantSupport(tenant);
+        }
+        return Meteor.server._multi_tenant_db_pool[tenant];
+    }
+
+    function getCollection(tenant){
+      console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
+      if(tenant==null){
+        return self._collection2;
+      }
+      var connection_name = tenant + "__" + self._name
+      if(typeof Meteor.server._multi_tenant_collections_pool === "undefined"){
+        Meteor.server._multi_tenant_collections_pool = {};
+      }
+      if(!Meteor.server._multi_tenant_collections_pool.hasOwnProperty(connection_name)){
+        console.log("registering new tenant: (tenant=%s)", connection_name);
+        var driver = getDatabaseDriver(tenant);
+        Meteor.server._multi_tenant_collections_pool[connection_name] = driver.open(name, self._connection);
+      }
+      var result = Meteor.server._multi_tenant_collections_pool[connection_name];
+      return result;
+    }
+
+    if(!Meteor.isServer){
+      return self._collection2;
+    }
+
+    var tenant = getTenant();
+    return getCollection(tenant);
+  }
+
   self._name = name;
   self._driver = options._driver;
 
@@ -134,17 +214,17 @@ Mongo.Collection = function (name, options) {
         // full _diffQuery moved calculation instead of applying change one at a
         // time.
         if (batchSize > 1 || reset)
-          self._collection.pauseObservers();
+          self._collection().pauseObservers();
 
         if (reset)
-          self._collection.remove({});
+          self._collection().remove({});
       },
 
       // Apply an update.
       // XXX better specify this interface (not in terms of a wire message)?
       update: function (msg) {
         var mongoId = MongoID.idParse(msg.id);
-        var doc = self._collection.findOne(mongoId);
+        var doc = self._collection().findOne(mongoId);
 
         // Is this a "replace the whole doc" message coming from the quiescence
         // of method writes to an object? (Note that 'undefined' is a valid
@@ -153,23 +233,23 @@ Mongo.Collection = function (name, options) {
           var replace = msg.replace;
           if (!replace) {
             if (doc)
-              self._collection.remove(mongoId);
+              self._collection().remove(mongoId);
           } else if (!doc) {
-            self._collection.insert(replace);
+            self._collection().insert(replace);
           } else {
             // XXX check that replace has no $ ops
-            self._collection.update(mongoId, replace);
+            self._collection().update(mongoId, replace);
           }
           return;
         } else if (msg.msg === 'added') {
           if (doc) {
             throw new Error("Expected not to find a document already present for an add");
           }
-          self._collection.insert(_.extend({_id: mongoId}, msg.fields));
+          self._collection().insert(_.extend({_id: mongoId}, msg.fields));
         } else if (msg.msg === 'removed') {
           if (!doc)
             throw new Error("Expected to find a document already present for removed");
-          self._collection.remove(mongoId);
+          self._collection().remove(mongoId);
         } else if (msg.msg === 'changed') {
           if (!doc)
             throw new Error("Expected to find a document to change");
@@ -186,7 +266,7 @@ Mongo.Collection = function (name, options) {
                 modifier.$set[key] = value;
               }
             });
-            self._collection.update(mongoId, modifier);
+            self._collection().update(mongoId, modifier);
           }
         } else {
           throw new Error("I don't know how to deal with this message");
@@ -196,16 +276,16 @@ Mongo.Collection = function (name, options) {
 
       // Called at the end of a batch of updates.
       endUpdate: function () {
-        self._collection.resumeObservers();
+        self._collection().resumeObservers();
       },
 
       // Called around method stub invocations to capture the original versions
       // of modified documents.
       saveOriginals: function () {
-        self._collection.saveOriginals();
+        self._collection().saveOriginals();
       },
       retrieveOriginals: function () {
-        return self._collection.retrieveOriginals();
+        return self._collection().retrieveOriginals();
       },
 
       // Used to preserve current versions of documents across a store reset.
@@ -283,7 +363,7 @@ _.extend(Mongo.Collection.prototype, {
     // careful about the length of arguments.
     var self = this;
     var argArray = _.toArray(arguments);
-    return self._collection.find(self._getFindSelector(argArray),
+    return self._collection().find(self._getFindSelector(argArray),
                                  self._getFindOptions(argArray));
   },
 
@@ -305,7 +385,7 @@ _.extend(Mongo.Collection.prototype, {
   findOne: function (/* selector, options */) {
     var self = this;
     var argArray = _.toArray(arguments);
-    return self._collection.findOne(self._getFindSelector(argArray),
+    return self._collection().findOne(self._getFindSelector(argArray),
                                     self._getFindOptions(argArray));
   }
 
@@ -590,7 +670,7 @@ _.each(["insert", "update", "remove"], function (name) {
         // If the user provided a callback and the collection implements this
         // operation asynchronously, then queryRet will be undefined, and the
         // result will be returned through the callback instead.
-        var queryRet = self._collection[name].apply(self._collection, args);
+        var queryRet = self._collection()[name].apply(self._collection(), args);
         ret = chooseReturnValueFromCollectionResult(queryRet);
       } catch (e) {
         if (callback) {
@@ -633,27 +713,27 @@ Mongo.Collection.prototype.upsert = function (selector, modifier,
 // Mongo's, but make it synchronous.
 Mongo.Collection.prototype._ensureIndex = function (index, options) {
   var self = this;
-  if (!self._collection._ensureIndex)
+  if (!self._collection()._ensureIndex)
     throw new Error("Can only call _ensureIndex on server collections");
-  self._collection._ensureIndex(index, options);
+  self._collection()._ensureIndex(index, options);
 };
 Mongo.Collection.prototype._dropIndex = function (index) {
   var self = this;
-  if (!self._collection._dropIndex)
+  if (!self._collection()._dropIndex)
     throw new Error("Can only call _dropIndex on server collections");
-  self._collection._dropIndex(index);
+  self._collection()._dropIndex(index);
 };
 Mongo.Collection.prototype._dropCollection = function () {
   var self = this;
-  if (!self._collection.dropCollection)
+  if (!self._collection().dropCollection)
     throw new Error("Can only call _dropCollection on server collections");
-  self._collection.dropCollection();
+  self._collection().dropCollection();
 };
 Mongo.Collection.prototype._createCappedCollection = function (byteSize, maxDocuments) {
   var self = this;
-  if (!self._collection._createCappedCollection)
+  if (!self._collection()._createCappedCollection)
     throw new Error("Can only call _createCappedCollection on server collections");
-  self._collection._createCappedCollection(byteSize, maxDocuments);
+  self._collection()._createCappedCollection(byteSize, maxDocuments);
 };
 
 /**
@@ -662,10 +742,10 @@ Mongo.Collection.prototype._createCappedCollection = function (byteSize, maxDocu
  */
 Mongo.Collection.prototype.rawCollection = function () {
   var self = this;
-  if (! self._collection.rawCollection) {
+  if (! self._collection().rawCollection) {
     throw new Error("Can only call rawCollection on server collections");
   }
-  return self._collection.rawCollection();
+  return self._collection().rawCollection();
 };
 
 /**
@@ -673,6 +753,7 @@ Mongo.Collection.prototype.rawCollection = function () {
  * @locus Server
  */
 Mongo.Collection.prototype.rawDatabase = function () {
+  console.log("this is a problem");
   var self = this;
   if (! (self._driver.mongo && self._driver.mongo.db)) {
     throw new Error("Can only call rawDatabase on server collections");
@@ -836,15 +917,7 @@ Mongo.Collection.prototype._defineMutationMethods = function() {
 
   // XXX Think about method namespacing. Maybe methods should be
   // "Meteor:Mongo:insert/NAME"?
-
-  console.log("This MongoDB has been patched. We now have a namespace: [%s]", self._namespace);
-  console.log("This MongoDB has been patched. We now have a namespace: ]", self);
-
-  if(self._namespace != null){
-    self._prefix = '/' + self._namespace + "__" + self._name + '/';
-  }else{
-    self._prefix = '/' + self._name + '/';
-  }
+  self._prefix = '/' + self._name + '/';
 
   // mutation methods
   if (self._connection) {
@@ -877,8 +950,8 @@ Mongo.Collection.prototype._defineMutationMethods = function() {
             // complex selector).
             if (generatedId !== null)
               args[0]._id = generatedId;
-            return self._collection[method].apply(
-              self._collection, args);
+            return self._collection()[method].apply(
+              self._collection(), args);
           }
 
           // This is the server receiving a method call from the client.
@@ -915,7 +988,7 @@ Mongo.Collection.prototype._defineMutationMethods = function() {
             //     invoke it. Bam, broken DDP connection.  Probably should just
             //     take this whole method and write it three times, invoking
             //     helpers for the common code.
-            return self._collection[method].apply(self._collection, args);
+            return self._collection()[method].apply(self._collection(), args);
           } else {
             // In secure mode, if we haven't called allow or deny, then nothing
             // is permitted.
@@ -1001,7 +1074,7 @@ Mongo.Collection.prototype._validatedInsert = function (userId, doc,
   if (generatedId !== null)
     doc._id = generatedId;
 
-  self._collection.insert.call(self._collection, doc);
+  self._collection().insert.call(self._collection(), doc);
 };
 
 var transformDoc = function (validator, doc) {
@@ -1068,7 +1141,7 @@ Mongo.Collection.prototype._validatedUpdate = function(
     });
   }
 
-  var doc = self._collection.findOne(selector, findOptions);
+  var doc = self._collection().findOne(selector, findOptions);
   if (!doc)  // none satisfied!
     return 0;
 
@@ -1101,8 +1174,8 @@ Mongo.Collection.prototype._validatedUpdate = function(
   // avoid races, but since selector is guaranteed to already just be an ID, we
   // don't have to any more.
 
-  return self._collection.update.call(
-    self._collection, selector, mutator, options);
+  return self._collection().update.call(
+    self._collection(), selector, mutator, options);
 };
 
 // Only allow these operations in validated updates. Specifically
@@ -1129,7 +1202,7 @@ Mongo.Collection.prototype._validatedRemove = function(userId, selector) {
     });
   }
 
-  var doc = self._collection.findOne(selector, findOptions);
+  var doc = self._collection().findOne(selector, findOptions);
   if (!doc)
     return 0;
 
@@ -1152,7 +1225,7 @@ Mongo.Collection.prototype._validatedRemove = function(userId, selector) {
   // Mongo to avoid races, but since selector is guaranteed to already just be
   // an ID, we don't have to any more.
 
-  return self._collection.remove.call(self._collection, selector);
+  return self._collection().remove.call(self._collection(), selector);
 };
 
 /**
