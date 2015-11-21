@@ -94,6 +94,7 @@ Mongo.Collection = function (name, options) {
 
 
   function getTenant(){
+      return null;
       if(self._connection == null || typeof Meteor.server.__connection_id === "undefined" ){
         return null;
       }
@@ -104,14 +105,14 @@ Mongo.Collection = function (name, options) {
           return null;
         }
         connection_id = Meteor.server.__connection_id;
-        console.log("Got connection ID from Meteor.server.__connection_id: " + connection_id);
+        // console.log("Got connection ID from Meteor.server.__connection_id: " + connection_id);
       }else{
         if( "id" in currentInvocation.connection ){
           // this is the preferered method of getting the connection ID.
           // Unfortunatelly the first time it is called, it returns null, somehow.
 
           connection_id = currentInvocation.connection.id;
-          console.log("Got connection ID from currentInvocation: " + connection_id);
+          // console.log("Got connection ID from currentInvocation: " + connection_id);
         }else{
           return null;
         }
@@ -133,7 +134,7 @@ Mongo.Collection = function (name, options) {
       // console.log(currentInvocation);
       // Meteor.server.__connection_id = null;
       // console.log(self._connection.sessions[connection_id].socket.url);
-      var base_url = self._connection.sessions[connection_id].socket.url
+      var base_url = self._connection.sessions[connection_id].socket.url;
       // var base_url = self._connection.stream_server._initial_request_url;
       if(base_url == null){
         return null;
@@ -146,7 +147,10 @@ Mongo.Collection = function (name, options) {
       }
 
       var output = base_url.substring(pos + toSearch.length).split("/").join("");
-
+      if(output==""){
+        return null;
+      }
+      console.log("getTenant() -> " + output);
       return output;
   }
 
@@ -176,6 +180,9 @@ Mongo.Collection = function (name, options) {
   }
 
   function getDatabaseDriver(tenant) {
+      if(tenant == null){
+        return self._driver2;
+      }
       if(typeof Meteor.server._multi_tenant_db_pool === "undefined"){
         Meteor.server._multi_tenant_db_pool = {};
       }
