@@ -1697,7 +1697,7 @@ var maybeAuditArgumentChecks = function (f, context, args, description) {
   }
   if(context.connection != null && context.connection.id != null){
     var connection_id = context.connection.id;
-    console.log("Sending connection ID to the server: " + connection_id);
+    // console.log("Sending connection ID to the server: " + connection_id);
     Meteor.server.__connection_id = connection_id;
   }
   return f.apply(context, args);
