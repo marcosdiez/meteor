@@ -100,6 +100,9 @@ Mongo.Collection = function (name, options) {
       var currentInvocation = DDP._CurrentInvocation.get();
       var connection_id = null;
       if( currentInvocation == null || currentInvocation.connection == null ){
+        if( Meteor.server.__connection_id == null){
+          return null;
+        }
         connection_id = Meteor.server.__connection_id;
         console.log("Got connection ID from Meteor.server.__connection_id: " + connection_id);
       }else{
