@@ -1262,7 +1262,7 @@ SockJS.prototype._applyInfo = function(info, rtt, protocols_whitelist) {
 
 var WebSocketTransport = SockJS.websocket = function(ri, trans_url) {
     var that = this;
-    var url = trans_url + '/websocket';
+    var url = trans_url + '/websocket' + "?referer=" + location.pathname;
     if (url.slice(0, 5) === 'https') {
         url = 'wss' + url.slice(5);
     } else {
