@@ -24,6 +24,7 @@ The default id generation technique is `'STRING'`.
  * @param {Function} options.transform An optional transformation function. Documents will be passed through this function before being returned from `fetch` or `findOne`, and before being passed to callbacks of `observe`, `map`, `forEach`, `allow`, and `deny`. Transforms are *not* applied for the callbacks of `observeChanges` or to cursors returned from publish functions.
  */
 Mongo.Collection = function (name, options) {
+  // console.log("this is a new instance of a mongodb collection: " + name);
   var self = this;
   if (! (self instanceof Mongo.Collection))
     throw new Error('use "new" to construct a Mongo.Collection');
@@ -93,12 +94,36 @@ Mongo.Collection = function (name, options) {
 
 
   function getTenant(){
-      if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null
-        || typeof Meteor.server.__connection_id === "undefined"
-        ){
+      if(self._connection == null || typeof Meteor.server.__connection_id === "undefined" ){
         return null;
       }
-      var connection_id = Meteor.server.__connection_id;
+      var currentInvocation = DDP._CurrentInvocation.get();
+      var connection_id = null;
+      if( currentInvocation == null ){
+        connection_id = Meteor.server.__connection_id;
+        console.log("Got connection ID from Meteor.server.__connection_id: " + connection_id);
+      }else{
+        // this is the preferered method of getting the connection ID.
+        // Unfortunatelly the first time it is called, it returns null, somehow.
+
+        connection_id = currentInvocation.connection.id;
+        console.log("Got connection ID from currentInvocation: " + connection_id);
+      }
+
+      //var connection_id = currentInvocation.connection.id;
+
+      // if(self._connection == null || typeof self._connection.stream_server === "undefined"  || self._connection.stream_server == null
+      //   || typeof Meteor.server.__connection_id === "undefined"
+      //   ){
+      //   return null;
+      // }
+      // var connection_id = Meteor.server.__connection_id;
+      // console.log("AA-----------------");
+
+      // console.log(self.connection);
+
+      // var currentInvocation = DDP._CurrentInvocation.get();
+      // console.log(currentInvocation);
       // Meteor.server.__connection_id = null;
       // console.log(self._connection.sessions[connection_id].socket.url);
       var base_url = self._connection.sessions[connection_id].socket.url
@@ -154,7 +179,7 @@ Mongo.Collection = function (name, options) {
   }
 
   function getCollection(tenant){
-    console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
+    // console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
     if(tenant==null){
       return self._collection2;
     }
@@ -377,6 +402,7 @@ _.extend(Mongo.Collection.prototype, {
     // from Collection.find(undefined) (return 0 docs).  so be
     // careful about the length of arguments.
     var self = this;
+
     var argArray = _.toArray(arguments);
     return self._collection().find(self._getFindSelector(argArray),
                                  self._getFindOptions(argArray));
@@ -768,7 +794,6 @@ Mongo.Collection.prototype.rawCollection = function () {
  * @locus Server
  */
 Mongo.Collection.prototype.rawDatabase = function () {
-  console.log("this is a problem");
   var self = this;
   if (! (self._driver().mongo && self._driver.mongo.db)) {
     throw new Error("Can only call rawDatabase on server collections");
