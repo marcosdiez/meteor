@@ -25,6 +25,10 @@ The default id generation technique is `'STRING'`.
  */
 Mongo.Collection = function (name, options) {
   // console.log("this is a new instance of a mongodb collection: " + name);
+
+
+
+
   var self = this;
   if (! (self instanceof Mongo.Collection))
     throw new Error('use "new" to construct a Mongo.Collection');
@@ -92,16 +96,37 @@ Mongo.Collection = function (name, options) {
   else
     self._connection = Meteor.server;
 
+  self._non_tenant_specific_packages = [
+    // i am sure about these:
+    "instances", // instances of rocket chat running. one per machine. tenant agnostic
+    "velocityTestFiles", "velocityFixtureFiles",
+    "velocityAggregateReports", "velocityTestReports", "velocityLogs", "velocityOptions", "velocityMirrors",
+
+    // I am *almost* sure about these
+    "meteor_autoupdate_clientVersions", // controls the version on the client and the server. tenant agnostic
+    "meteor_accounts_loginServiceConfiguration", // oauth credentials. I guess it can be saved on the global settings as well.
+    "usersSessions", // https://github.com/BenjaminRH/meteor-user-session persistent user session. seems ok as well.
+
+    // I will have to fix this later
+
+    "roles", // https://atmospherejs.com/alanning/roles -- should be alright as long as all roles are hard coded
+
+    "" // this is just so I can have a coma everywhere. will be removed later.
+   ];
 
   function getTenant(){
-      return null;
+      if(self._non_tenant_specific_packages.indexOf(self._name) >= 0 ){
+        return null; // this packages must be shared for all tenants
+      }
       if(self._connection == null || typeof Meteor.server.__connection_id === "undefined" ){
+        console.log("[null]A %s getTenant()", self._name)
         return null;
       }
       var currentInvocation = DDP._CurrentInvocation.get();
       var connection_id = null;
       if( currentInvocation == null || currentInvocation.connection == null ){
         if( Meteor.server.__connection_id == null){
+          console.log("[null]B %s getTenant()", self._name)
           return null;
         }
         connection_id = Meteor.server.__connection_id;
@@ -114,6 +139,7 @@ Mongo.Collection = function (name, options) {
           connection_id = currentInvocation.connection.id;
           // console.log("Got connection ID from currentInvocation: " + connection_id);
         }else{
+          console.log("[null]C %s getTenant()", self._name)
           return null;
         }
       }
@@ -135,22 +161,28 @@ Mongo.Collection = function (name, options) {
       // Meteor.server.__connection_id = null;
       // console.log(self._connection.sessions[connection_id].socket.url);
       if(! (connection_id in self._connection.sessions)){
+        console.log("[null]D %s getTenant()", self._name)
         return null;
       }
 
       var base_url = self._connection.sessions[connection_id].socket.url;
       // var base_url = self._connection.stream_server._initial_request_url;
       if(base_url == null){
+        console.log("[null]E %s getTenant()", self._name)
         return null;
       }
 
       var hostname = self._connection.sessions[connection_id].socket.headers.host;
       var pos = hostname.indexOf(".");
       if(pos < 0){
+        console.log("[null]F %s getTenant()", self._name)
         return null;
       }
       var tenant = hostname.substring(0, pos);
       // console.log("getTenant() -> " + tenant);
+
+      // console.log("[null] [%s] %s getTenant()", tenant, self._name)
+      // return null;
       return tenant;
 
 
@@ -210,7 +242,9 @@ Mongo.Collection = function (name, options) {
   }
 
   function getCollection(tenant, default_value){
-    console.log("getCollection(%s, %s);", tenant, self._name);
+    if(self._non_tenant_specific_packages.indexOf(self._name) < 0 ){
+      // console.log("getCollection(%s, %s);", tenant, self._name);
+    }
     // console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
     if(tenant==null){
       return default_value;
@@ -248,7 +282,11 @@ Mongo.Collection = function (name, options) {
     if(!Meteor.isServer){
       return self._collection2;
     }
-    return getCollection(getTenant(), self._collection2);
+    var tenant = getTenant();
+    if(tenant == null && self._name == "instances"){
+      // throw   new Error("stactkrace");
+    }
+    return getCollection(tenant, self._collection2);
   }
 
 
