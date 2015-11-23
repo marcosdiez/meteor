@@ -445,7 +445,6 @@ _.extend(Mongo.Collection.prototype, {
     // from Collection.find(undefined) (return 0 docs).  so be
     // careful about the length of arguments.
     var self = this;
-
     var argArray = _.toArray(arguments);
     return self._collection.find(self._getFindSelector(argArray),
                                  self._getFindOptions(argArray));
