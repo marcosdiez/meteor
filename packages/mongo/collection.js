@@ -297,17 +297,17 @@ Mongo.Collection = function (name, options) {
         // full _diffQuery moved calculation instead of applying change one at a
         // time.
         if (batchSize > 1 || reset)
-          self._collection().pauseObservers();
+          self._collection.pauseObservers();
 
         if (reset)
-          self._collection().remove({});
+          self._collection.remove({});
       },
 
       // Apply an update.
       // XXX better specify this interface (not in terms of a wire message)?
       update: function (msg) {
         var mongoId = MongoID.idParse(msg.id);
-        var doc = self._collection().findOne(mongoId);
+        var doc = self._collection.findOne(mongoId);
 
         // Is this a "replace the whole doc" message coming from the quiescence
         // of method writes to an object? (Note that 'undefined' is a valid
@@ -316,23 +316,23 @@ Mongo.Collection = function (name, options) {
           var replace = msg.replace;
           if (!replace) {
             if (doc)
-              self._collection().remove(mongoId);
+              self._collection.remove(mongoId);
           } else if (!doc) {
-            self._collection().insert(replace);
+            self._collection.insert(replace);
           } else {
             // XXX check that replace has no $ ops
-            self._collection().update(mongoId, replace);
+            self._collection.update(mongoId, replace);
           }
           return;
         } else if (msg.msg === 'added') {
           if (doc) {
             throw new Error("Expected not to find a document already present for an add");
           }
-          self._collection().insert(_.extend({_id: mongoId}, msg.fields));
+          self._collection.insert(_.extend({_id: mongoId}, msg.fields));
         } else if (msg.msg === 'removed') {
           if (!doc)
             throw new Error("Expected to find a document already present for removed");
-          self._collection().remove(mongoId);
+          self._collection.remove(mongoId);
         } else if (msg.msg === 'changed') {
           if (!doc)
             throw new Error("Expected to find a document to change");
@@ -349,7 +349,7 @@ Mongo.Collection = function (name, options) {
                 modifier.$set[key] = value;
               }
             });
-            self._collection().update(mongoId, modifier);
+            self._collection.update(mongoId, modifier);
           }
         } else {
           throw new Error("I don't know how to deal with this message");
@@ -359,16 +359,16 @@ Mongo.Collection = function (name, options) {
 
       // Called at the end of a batch of updates.
       endUpdate: function () {
-        self._collection().resumeObservers();
+        self._collection.resumeObservers();
       },
 
       // Called around method stub invocations to capture the original versions
       // of modified documents.
       saveOriginals: function () {
-        self._collection().saveOriginals();
+        self._collection.saveOriginals();
       },
       retrieveOriginals: function () {
-        return self._collection().retrieveOriginals();
+        return self._collection.retrieveOriginals();
       },
 
       // Used to preserve current versions of documents across a store reset.
@@ -447,7 +447,7 @@ _.extend(Mongo.Collection.prototype, {
     var self = this;
 
     var argArray = _.toArray(arguments);
-    return self._collection().find(self._getFindSelector(argArray),
+    return self._collection.find(self._getFindSelector(argArray),
                                  self._getFindOptions(argArray));
   },
 
@@ -469,7 +469,7 @@ _.extend(Mongo.Collection.prototype, {
   findOne: function (/* selector, options */) {
     var self = this;
     var argArray = _.toArray(arguments);
-    return self._collection().findOne(self._getFindSelector(argArray),
+    return self._collection.findOne(self._getFindSelector(argArray),
                                     self._getFindOptions(argArray));
   }
 
@@ -754,7 +754,7 @@ _.each(["insert", "update", "remove"], function (name) {
         // If the user provided a callback and the collection implements this
         // operation asynchronously, then queryRet will be undefined, and the
         // result will be returned through the callback instead.
-        var queryRet = self._collection()[name].apply(self._collection(), args);
+        var queryRet = self._collection[name].apply(self._collection, args);
         ret = chooseReturnValueFromCollectionResult(queryRet);
       } catch (e) {
         if (callback) {
@@ -797,27 +797,27 @@ Mongo.Collection.prototype.upsert = function (selector, modifier,
 // Mongo's, but make it synchronous.
 Mongo.Collection.prototype._ensureIndex = function (index, options) {
   var self = this;
-  if (!self._collection()._ensureIndex)
+  if (!self._collection._ensureIndex)
     throw new Error("Can only call _ensureIndex on server collections");
-  self._collection()._ensureIndex(index, options);
+  self._collection._ensureIndex(index, options);
 };
 Mongo.Collection.prototype._dropIndex = function (index) {
   var self = this;
-  if (!self._collection()._dropIndex)
+  if (!self._collection._dropIndex)
     throw new Error("Can only call _dropIndex on server collections");
-  self._collection()._dropIndex(index);
+  self._collection._dropIndex(index);
 };
 Mongo.Collection.prototype._dropCollection = function () {
   var self = this;
-  if (!self._collection().dropCollection)
+  if (!self._collection.dropCollection)
     throw new Error("Can only call _dropCollection on server collections");
-  self._collection().dropCollection();
+  self._collection.dropCollection();
 };
 Mongo.Collection.prototype._createCappedCollection = function (byteSize, maxDocuments) {
   var self = this;
-  if (!self._collection()._createCappedCollection)
+  if (!self._collection._createCappedCollection)
     throw new Error("Can only call _createCappedCollection on server collections");
-  self._collection()._createCappedCollection(byteSize, maxDocuments);
+  self._collection._createCappedCollection(byteSize, maxDocuments);
 };
 
 /**
@@ -826,10 +826,10 @@ Mongo.Collection.prototype._createCappedCollection = function (byteSize, maxDocu
  */
 Mongo.Collection.prototype.rawCollection = function () {
   var self = this;
-  if (! self._collection().rawCollection) {
+  if (! self._collection.rawCollection) {
     throw new Error("Can only call rawCollection on server collections");
   }
-  return self._collection().rawCollection();
+  return self._collection.rawCollection();
 };
 
 /**
@@ -1033,8 +1033,8 @@ Mongo.Collection.prototype._defineMutationMethods = function() {
             // complex selector).
             if (generatedId !== null)
               args[0]._id = generatedId;
-            return self._collection()[method].apply(
-              self._collection(), args);
+            return self._collection[method].apply(
+              self._collection, args);
           }
 
           // This is the server receiving a method call from the client.
@@ -1071,7 +1071,7 @@ Mongo.Collection.prototype._defineMutationMethods = function() {
             //     invoke it. Bam, broken DDP connection.  Probably should just
             //     take this whole method and write it three times, invoking
             //     helpers for the common code.
-            return self._collection()[method].apply(self._collection(), args);
+            return self._collection[method].apply(self._collection, args);
           } else {
             // In secure mode, if we haven't called allow or deny, then nothing
             // is permitted.
@@ -1157,7 +1157,7 @@ Mongo.Collection.prototype._validatedInsert = function (userId, doc,
   if (generatedId !== null)
     doc._id = generatedId;
 
-  self._collection().insert.call(self._collection(), doc);
+  self._collection.insert.call(self._collection, doc);
 };
 
 var transformDoc = function (validator, doc) {
@@ -1224,7 +1224,7 @@ Mongo.Collection.prototype._validatedUpdate = function(
     });
   }
 
-  var doc = self._collection().findOne(selector, findOptions);
+  var doc = self._collection.findOne(selector, findOptions);
   if (!doc)  // none satisfied!
     return 0;
 
@@ -1257,8 +1257,8 @@ Mongo.Collection.prototype._validatedUpdate = function(
   // avoid races, but since selector is guaranteed to already just be an ID, we
   // don't have to any more.
 
-  return self._collection().update.call(
-    self._collection(), selector, mutator, options);
+  return self._collection.update.call(
+    self._collection, selector, mutator, options);
 };
 
 // Only allow these operations in validated updates. Specifically
@@ -1285,7 +1285,7 @@ Mongo.Collection.prototype._validatedRemove = function(userId, selector) {
     });
   }
 
-  var doc = self._collection().findOne(selector, findOptions);
+  var doc = self._collection.findOne(selector, findOptions);
   if (!doc)
     return 0;
 
@@ -1308,7 +1308,7 @@ Mongo.Collection.prototype._validatedRemove = function(userId, selector) {
   // Mongo to avoid races, but since selector is guaranteed to already just be
   // an ID, we don't have to any more.
 
-  return self._collection().remove.call(self._collection(), selector);
+  return self._collection.remove.call(self._collection, selector);
 };
 
 /**
