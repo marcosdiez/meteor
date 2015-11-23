@@ -134,25 +134,42 @@ Mongo.Collection = function (name, options) {
       // console.log(currentInvocation);
       // Meteor.server.__connection_id = null;
       // console.log(self._connection.sessions[connection_id].socket.url);
+      if(! (connection_id in self._connection.sessions)){
+        return null;
+      }
+
       var base_url = self._connection.sessions[connection_id].socket.url;
       // var base_url = self._connection.stream_server._initial_request_url;
       if(base_url == null){
         return null;
       }
 
-      var toSearch = "referer=";
-      var pos = base_url.indexOf(toSearch);
+      var hostname = self._connection.sessions[connection_id].socket.headers.host;
+      var pos = hostname.indexOf(".");
       if(pos < 0){
         return null;
       }
+      var tenant = hostname.substring(0, pos);
+      // console.log("getTenant() -> " + tenant);
+      return tenant;
 
-      var output = base_url.substring(pos + toSearch.length).split("/").join("");
-      if(output==""){
-        return null;
-      }
-      console.log("getTenant() -> " + output);
-      return output;
+
+      // console.log(self._connection.sessions[connection_id].socket.headers.host)
+      // var toSearch = "referer=";
+      // var pos = base_url.indexOf(toSearch);
+      // if(pos < 0){
+      //   return null;
+      // }
+
+      // var output = base_url.substring(pos + toSearch.length).split("/").join("");
+      // if(output==""){
+      //   return null;
+      // }
+      // console.log("getTenant() -> " + output);
+      // return output;
   }
+
+  self._getTenant = getTenant;
 
   function addTenantToConnectionString(connectionString, tenant){
       if(tenant == null || tenant == ""){
@@ -179,9 +196,9 @@ Mongo.Collection = function (name, options) {
       return new MongoInternals.RemoteCollectionDriver(mongoUrl, connectionOptions);
   }
 
-  function getDatabaseDriver(tenant) {
+  function getDatabaseDriver(tenant, default_value) {
       if(tenant == null){
-        return self._driver2;
+        return default_value;
       }
       if(typeof Meteor.server._multi_tenant_db_pool === "undefined"){
         Meteor.server._multi_tenant_db_pool = {};
@@ -192,10 +209,11 @@ Mongo.Collection = function (name, options) {
       return Meteor.server._multi_tenant_db_pool[tenant];
   }
 
-  function getCollection(tenant){
+  function getCollection(tenant, default_value){
+    console.log("getCollection(%s, %s);", tenant, self._name);
     // console.log("getCollection(name=%s, tenant=%s)", self._name, tenant);
     if(tenant==null){
-      return self._collection2;
+      return default_value;
     }
     var connection_name = tenant + "__" + self._name
     if(typeof Meteor.server._multi_tenant_collections_pool === "undefined"){
@@ -226,25 +244,36 @@ Mongo.Collection = function (name, options) {
 
   self._collection2 = options._driver.open(name, self._connection);
 
-  self._collection = function(){
+  self._collectionFunction = function(){
     if(!Meteor.isServer){
       return self._collection2;
     }
-
-    var tenant = getTenant();
-    return getCollection(tenant);
+    return getCollection(getTenant(), self._collection2);
   }
+
+
+  Object.defineProperty(self, '_collection', {
+    get: self._collectionFunction,
+    set: function(newValue) { console.log("------------------------------------------------setter for Mongo._collection  " + newValue) }
+  });
+
 
   self._name = name;
   self._driver2 = options._driver;
 
-  self._driver = function(){
+  self._driverFunction = function(){
     if(!Meteor.isServer){
       return self._driver2;
     }
-    var tenant = getTenant();
-    return getDatabaseDriver(tenant);
+    return getDatabaseDriver(getTenant(), self._driver2);
   }
+
+  Object.defineProperty(self, '_driver', {
+    get: self._driverFunction,
+    set: function(newValue) { console.log("------------------------------------------------setter for Mongo._driver " + newValue) }
+  });
+
+
 
   if (self._connection && self._connection.registerStore) {
     // OK, we're going to be a slave, replicating some remote
