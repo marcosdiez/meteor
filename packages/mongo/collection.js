@@ -838,10 +838,10 @@ Mongo.Collection.prototype.rawCollection = function () {
  */
 Mongo.Collection.prototype.rawDatabase = function () {
   var self = this;
-  if (! (self._driver().mongo && self._driver.mongo.db)) {
+  if (! (self._driver.mongo && self._driver.mongo.db)) {
     throw new Error("Can only call rawDatabase on server collections");
   }
-  return self._driver().mongo.db;
+  return self._driver.mongo.db;
 };
 
 
