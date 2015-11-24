@@ -115,13 +115,23 @@ Mongo.Collection = function (name, options) {
    ];
 
   function getTenant(){
+
       if(self._non_tenant_specific_packages.indexOf(self._name) >= 0 ){
         return null; // this packages must be shared for all tenants
       }
-      if(self._connection == null || typeof Meteor.server.__connection_id === "undefined" ){
-        console.log("[null]A %s getTenant()", self._name)
+
+
+      if(self._connection == null){
+        console.log("[null]A1 %s getTenant()", self._name)
         return null;
       }
+
+      if(!Meteor.server || !Meteor.server.__connection_id){
+        console.log("[null]A2 %s getTenant()", self._name);
+        return null;
+      }
+      //  return null;
+
       var currentInvocation = DDP._CurrentInvocation.get();
       var connection_id = null;
       if( currentInvocation == null || currentInvocation.connection == null ){
@@ -179,10 +189,10 @@ Mongo.Collection = function (name, options) {
         return null;
       }
       var tenant = hostname.substring(0, pos);
+
       // console.log("getTenant() -> " + tenant);
 
       // console.log("[null] [%s] %s getTenant()", tenant, self._name)
-      // return null;
       return tenant;
 
 
@@ -202,6 +212,15 @@ Mongo.Collection = function (name, options) {
   }
 
   self._getTenant = getTenant;
+  self._logDbCommand = function(sein, command_name, arguments ){
+    if(sein._non_tenant_specific_packages.indexOf(sein._name) < 0 ){
+      var tenant = sein._getTenant();
+      if(tenant == null){
+        console.log("MMMM [%s] [%s] %s - ", sein._name, tenant, command_name, arguments);
+      }
+    }
+  }
+
 
   function addTenantToConnectionString(connectionString, tenant){
       if(tenant == null || tenant == ""){
@@ -484,6 +503,9 @@ _.extend(Mongo.Collection.prototype, {
     // careful about the length of arguments.
     var self = this;
     var argArray = _.toArray(arguments);
+
+    self._logDbCommand(self, "find", arguments);
+
     return self._collection.find(self._getFindSelector(argArray),
                                  self._getFindOptions(argArray));
   },
@@ -506,6 +528,10 @@ _.extend(Mongo.Collection.prototype, {
   findOne: function (/* selector, options */) {
     var self = this;
     var argArray = _.toArray(arguments);
+
+    self._logDbCommand(self, "findOne", arguments);
+
+
     return self._collection.findOne(self._getFindSelector(argArray),
                                     self._getFindOptions(argArray));
   }
@@ -669,6 +695,7 @@ var throwIfSelectorIsNotId = function (selector, methodName) {
 _.each(["insert", "update", "remove"], function (name) {
   Mongo.Collection.prototype[name] = function (/* arguments */) {
     var self = this;
+    this._logDbCommand(this, name, arguments);
     var args = _.toArray(arguments);
     var callback;
     var insertId;
