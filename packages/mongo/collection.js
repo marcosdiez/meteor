@@ -115,28 +115,27 @@ Mongo.Collection = function (name, options) {
    ];
 
   function getTenant(){
-
       if(self._non_tenant_specific_packages.indexOf(self._name) >= 0 ){
         return null; // this packages must be shared for all tenants
       }
 
 
       if(self._connection == null){
-        console.log("[null]A1 %s getTenant()", self._name)
+        // console.log("[null]A1 %s getTenant()", self._name)
         return null;
       }
 
       if(!Meteor.server || !Meteor.server.__connection_id){
-        console.log("[null]A2 %s getTenant()", self._name);
+        // console.log("[null]A2 %s getTenant()", self._name);
         return null;
       }
-      //  return null;
+
 
       var currentInvocation = DDP._CurrentInvocation.get();
       var connection_id = null;
       if( currentInvocation == null || currentInvocation.connection == null ){
         if( Meteor.server.__connection_id == null){
-          console.log("[null]B %s getTenant()", self._name)
+          // console.log("[null]B %s getTenant()", self._name)
           return null;
         }
         connection_id = Meteor.server.__connection_id;
@@ -149,7 +148,7 @@ Mongo.Collection = function (name, options) {
           connection_id = currentInvocation.connection.id;
           // console.log("Got connection ID from currentInvocation: " + connection_id);
         }else{
-          console.log("[null]C %s getTenant()", self._name)
+          // console.log("[null]C %s getTenant()", self._name)
           return null;
         }
       }
@@ -171,21 +170,21 @@ Mongo.Collection = function (name, options) {
       // Meteor.server.__connection_id = null;
       // console.log(self._connection.sessions[connection_id].socket.url);
       if(! (connection_id in self._connection.sessions)){
-        console.log("[null]D %s getTenant()", self._name)
+        // console.log("[null]D %s getTenant()", self._name)
         return null;
       }
 
       var base_url = self._connection.sessions[connection_id].socket.url;
       // var base_url = self._connection.stream_server._initial_request_url;
       if(base_url == null){
-        console.log("[null]E %s getTenant()", self._name)
+        // console.log("[null]E %s getTenant()", self._name)
         return null;
       }
 
       var hostname = self._connection.sessions[connection_id].socket.headers.host;
       var pos = hostname.indexOf(".");
       if(pos < 0){
-        console.log("[null]F %s getTenant()", self._name)
+        // console.log("[null]F %s getTenant()", self._name)
         return null;
       }
       var tenant = hostname.substring(0, pos);
@@ -215,9 +214,9 @@ Mongo.Collection = function (name, options) {
   self._logDbCommand = function(sein, command_name, arguments ){
     if(sein._non_tenant_specific_packages.indexOf(sein._name) < 0 ){
       var tenant = sein._getTenant();
-      if(tenant == null){
-        console.log("MMMM [%s] [%s] %s - ", sein._name, tenant, command_name, arguments);
-      }
+      //if(tenant == null){
+        // console.log("MMMM [%s] [%s] %s - ", sein._name, tenant, command_name, arguments);
+      //}
     }
   }
 
@@ -243,7 +242,7 @@ Mongo.Collection = function (name, options) {
       if (! mongoUrl){
         throw new Error("MONGO_URL must be set in environment");
       }
-      console.log("mongoUrl %s name %s", mongoUrl, self._name);
+      // console.log("mongoUrl %s name %s", mongoUrl, self._name);
       return new MongoInternals.RemoteCollectionDriver(mongoUrl, connectionOptions);
   }
 
@@ -273,7 +272,7 @@ Mongo.Collection = function (name, options) {
       Meteor.server._multi_tenant_collections_pool = {};
     }
     if(!Meteor.server._multi_tenant_collections_pool.hasOwnProperty(connection_name)){
-      console.log("registering new tenant: (tenant=%s)", connection_name);
+      // console.log("registering new tenant: (tenant=%s)", connection_name);
       var driver = getDatabaseDriver(tenant);
       Meteor.server._multi_tenant_collections_pool[connection_name] = driver.open(name, self._connection);
     }
@@ -311,7 +310,9 @@ Mongo.Collection = function (name, options) {
 
   Object.defineProperty(self, '_collection', {
     get: self._collectionFunction,
-    set: function(newValue) { console.log("------------------------------------------------setter for Mongo._collection  " + newValue) }
+    set: function(newValue) {
+      throw new Error("Setting a collection is not supported because we have multi tenants");
+    }
   });
 
 
@@ -327,7 +328,9 @@ Mongo.Collection = function (name, options) {
 
   Object.defineProperty(self, '_driver', {
     get: self._driverFunction,
-    set: function(newValue) { console.log("------------------------------------------------setter for Mongo._driver " + newValue) }
+    set: function(newValue) {
+      throw new Error("Setting a mongo driver is not supported because we have multi tenants");
+    }
   });
 
 
