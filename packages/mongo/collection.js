@@ -7,6 +7,79 @@
  */
 Mongo = {};
 
+
+var _multi_tenant_state = {};
+Mongo.MultiTenant = function (name, options) {
+  var self = this;
+
+  function beepIfNotEmpty(){
+    if("blah" in _multi_tenant_state){
+      console.log("beep");
+    }else{
+      _multi_tenant_state["blah"] = true;
+      console.log("no beep");
+    }
+
+  }
+
+  self.getTenant = function (){
+      beepIfNotEmpty();
+      if(!Meteor.server || !Meteor.server.__connection_id){
+        // console.log("[null]A2 %s getTenant()", self._name);
+        return null;
+      }
+
+      var currentInvocation = DDP._CurrentInvocation.get();
+      var connection_id = null;
+      if( currentInvocation == null || currentInvocation.connection == null ){
+        if( Meteor.server.__connection_id == null){
+          // console.log("[null]B %s getTenant()", self._name)
+          return null;
+        }
+        connection_id = Meteor.server.__connection_id;
+        // console.log("I had to cheat and use Meteor.server.__connection_id ", connection_id);
+        // console.log("Got connection ID from Meteor.server.__connection_id: " + connection_id);
+      }else{
+        if( "id" in currentInvocation.connection ){
+          // this is the preferered method of getting the connection ID.
+          // Unfortunatelly the first time it is called, it returns null, somehow.
+
+          connection_id = currentInvocation.connection.id;
+          // console.log("Got connection ID from currentInvocation: " + connection_id);
+        }else{
+          // console.log("[null]C %s getTenant()", self._name)
+          return null;
+        }
+      }
+      var sessions = Meteor.server.sessions
+      if(! (connection_id in sessions)){
+        // console.log("[null]D %s getTenant()", self._name)
+        return null;
+      }
+
+      var base_socket = sessions[connection_id].socket;
+      var base_url = base_socket.url;
+      // var base_url = self._connection.stream_server._initial_request_url;
+      if(base_url == null){
+        // console.log("[null]E %s getTenant()", self._name)
+        return null;
+      }
+
+      var hostname = base_socket.headers.host;
+      var pos = hostname.indexOf(".");
+      if(pos < 0){
+        // console.log("[null]F %s getTenant()", self._name)
+        return null;
+      }
+      var tenant = hostname.substring(0, pos);
+
+      console.log("getTenantX() -> %", tenant);
+      return null;
+      // console.log("[null] [%s] %s getTenant()", tenant, self._name)
+      return tenant;
+  }
+};
+
 /**
  * @summary Constructor for a Collection
  * @locus Anywhere
@@ -115,10 +188,11 @@ Mongo.Collection = function (name, options) {
    ];
 
   function getTenant(){
+
       if(self._non_tenant_specific_packages.indexOf(self._name) >= 0 ){
         return null; // this packages must be shared for all tenants
       }
-
+      // console.log("getTenant for ", self._name);
 
       if(self._connection == null){
         // console.log("[null]A1 %s getTenant()", self._name)
@@ -189,8 +263,8 @@ Mongo.Collection = function (name, options) {
       }
       var tenant = hostname.substring(0, pos);
 
-      // console.log("getTenant() -> " + tenant);
-
+      console.log("getTenant() -> %s %s", tenant, self._name);
+      return null;
       // console.log("[null] [%s] %s getTenant()", tenant, self._name)
       return tenant;
 
@@ -209,7 +283,6 @@ Mongo.Collection = function (name, options) {
       // console.log("getTenant() -> " + output);
       // return output;
   }
-
   self._getTenant = getTenant;
   self._logDbCommand = function(sein, command_name, arguments ){
     if(sein._non_tenant_specific_packages.indexOf(sein._name) < 0 ){
@@ -242,7 +315,7 @@ Mongo.Collection = function (name, options) {
       if (! mongoUrl){
         throw new Error("MONGO_URL must be set in environment");
       }
-      // console.log("mongoUrl %s name %s", mongoUrl, self._name);
+      console.log("mongoUrl %s name %s", mongoUrl, self._name);
       return new MongoInternals.RemoteCollectionDriver(mongoUrl, connectionOptions);
   }
 
